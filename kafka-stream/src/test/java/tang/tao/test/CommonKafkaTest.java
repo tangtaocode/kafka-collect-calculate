@@ -33,6 +33,7 @@ public class CommonKafkaTest {
         Map<String,Object> config = new HashMap<String,Object>();
         config.put("bootstrap.servers","127.0.0.1:9092");
         config.put("client.id","kafka-producer-client-id");
+        config.put("acks",1);
         //config.put("transactional.id",topic+"transactional_id");
         config.put("retries",0);
         config.put("connections.max.idle.ms",5*60*1000);
@@ -63,7 +64,6 @@ public class CommonKafkaTest {
         Map<String,Object> config = new HashMap<String,Object>();
         config.put("bootstrap.servers","127.0.0.1:9092");
         config.put("client.id","kafka-consumer-client-id");
-        config.put("retries",0);
         config.put("connections.max.idle.ms",5*60*1000);
         config.put("heartbeat.interval.ms",100);
         config.put("group.id","test-group");
