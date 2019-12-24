@@ -1,6 +1,8 @@
 package tang.tao.test;
 
 import kafka.KafkaTest;
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -27,13 +29,24 @@ import java.util.*;
 @SpringBootTest
 public class CommonKafkaTest {
 
-    private  final static String  topic = "topic-json-calculate";
+    private  final static String  topic = "topic-json-stream";
+    @Test
+    public void changeTopic(){
+        Properties props = new Properties();
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG,"127.0.0.1:9092");
+        props.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG,30000);
+        AdminClient client = AdminClient.create(props);
+        client.deleteTopics(Arrays.asList(topic));
+        client.close();
+
+    }
+
     @Test
     public void producer(){
         Map<String,Object> config = new HashMap<String,Object>();
         config.put("bootstrap.servers","127.0.0.1:9092");
         config.put("client.id","kafka-producer-client-id");
-        config.put("acks",1);
+        config.put("acks","1");
         //config.put("transactional.id",topic+"transactional_id");
         config.put("retries",0);
         config.put("connections.max.idle.ms",5*60*1000);
@@ -46,14 +59,19 @@ public class CommonKafkaTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            ProducerRecord<String, String> record = new ProducerRecord(topic, "{\"name\":\"tangtao\",\"sex\":\"男\"}");
-            producer.send(record, new Callback() {
-                @Override
-                public void onCompletion(RecordMetadata metadata, Exception exception) {
-                    System.out.println("生产消息"+metadata.toString());
-                    //exception.printStackTrace();
-                }
-            });
+            for(int i=0;i<2;i++){
+                ProducerRecord<String, String> record = new ProducerRecord(topic, i,topic+i,"{\"name\":\"tangtao\",\"sex\":\"男\"}");
+
+                producer.send(record, new Callback() {
+                    @Override
+                    public void onCompletion(RecordMetadata metadata, Exception exception) {
+                        if(!ObjectUtils.isEmpty(exception)){
+                            exception.printStackTrace();
+                        }
+                        System.out.println("生产消息"+metadata.toString());
+                    }
+                });
+            }
         }
 
         //producer.commitTransaction();
@@ -67,6 +85,7 @@ public class CommonKafkaTest {
         config.put("connections.max.idle.ms",5*60*1000);
         config.put("heartbeat.interval.ms",100);
         config.put("group.id","test-group");
+
         KafkaConsumer consumer = new KafkaConsumer(config,new JsonDeserializer<String>(),new JsonDeserializer<String>());
         List<String> topics = new ArrayList<String>();
         topics.add(topic);
@@ -74,9 +93,10 @@ public class CommonKafkaTest {
 
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+                //可手工空置消费partitions自平衡消费
                 System.out.println("撤销topic partition"+partitions.size());
             }
-
+            //可手工移除或空置消费partitions自平衡消费
             @Override
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
                 System.out.println("分配topic partition"+partitions.size());
