@@ -3,15 +3,13 @@ package tang.tao.test;
 import kafka.KafkaTest;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.clients.producer.RecordMetadata;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,8 +20,11 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.util.ObjectUtils;
 
-import java.time.Duration;
+import javax.swing.plaf.synth.SynthTextAreaUI;
+import java.time.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @RunWith(SpringRunner.class)
 @SpringBootTest
@@ -59,7 +60,7 @@ public class CommonKafkaTest {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            for(int i=0;i<2;i++){
+            for(int i=0;i<3;i++){
                 ProducerRecord<String, String> record = new ProducerRecord(topic, i,topic+i,"{\"name\":\"tangtao\",\"sex\":\"男\"}");
 
                 producer.send(record, new Callback() {
@@ -78,15 +79,41 @@ public class CommonKafkaTest {
     }
 
     @Test
-    public void consumer(){
+    public void consumer() throws InterruptedException {
+        ExecutorService executor = Executors.newFixedThreadPool(3);
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                runConsumer("one");
+            }
+        });
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                runConsumer("two");
+            }
+        });
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                runConsumer("three");
+            }
+        });
+        Thread.sleep(60000000);
+    }
+
+    private void runConsumer(String number){
         Map<String,Object> config = new HashMap<String,Object>();
         config.put("bootstrap.servers","127.0.0.1:9092");
-        config.put("client.id","kafka-consumer-client-id");
+        config.put("client.id","kafka-consumer-client-id"+number);
         config.put("connections.max.idle.ms",5*60*1000);
         config.put("heartbeat.interval.ms",100);
+        //latest:earliest
+        config.put("auto.offset.reset","earliest");
+        config.put("enable.auto.commit","false");
         config.put("group.id","test-group");
 
-        KafkaConsumer consumer = new KafkaConsumer(config,new JsonDeserializer<String>(),new JsonDeserializer<String>());
+        KafkaConsumer consumer = new KafkaConsumer(config,new StringDeserializer(),new StringDeserializer());
         List<String> topics = new ArrayList<String>();
         topics.add(topic);
         consumer.subscribe(topics,new ConsumerRebalanceListener(){
@@ -94,20 +121,32 @@ public class CommonKafkaTest {
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
                 //可手工空置消费partitions自平衡消费
-                System.out.println("撤销topic partition"+partitions.size());
+                System.out.println(number+"撤销topic partition"+partitions.size());
             }
             //可手工移除或空置消费partitions自平衡消费
             @Override
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-                System.out.println("分配topic partition"+partitions.size());
+                System.out.println(number+"分配topic partition"+partitions.size());
             }
         });
         while (true){
             ConsumerRecords records =  consumer.poll(Duration.ofSeconds(2));
             Iterator<ConsumerRecord<?, ?>> iterator = records.iterator();
            while (iterator.hasNext()){
-               System.out.println("消费数据"+iterator.next().toString());
+               ConsumerRecord ccord = iterator.next();
+
+               Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<TopicPartition, OffsetAndMetadata>(1);
+               TopicPartition topicPartition = new TopicPartition(ccord.topic(),ccord.partition());
+               OffsetAndMetadata offsetAndMetadata = new OffsetAndMetadata(ccord.offset()+1,LocalDateTime.now().toInstant(ZoneOffset.of("+8")).toEpochMilli()+"");
+               offsets.put(topicPartition,offsetAndMetadata);
+               consumer.commitSync(offsets);
+
+               Date time = new Date(ccord.timestamp());
+               System.out.println(number+"消费数据日期"+time.toString());
+               System.out.println(number+"消费数据"+ccord.toString());
+               System.out.println(number+"提交消费偏移量"+ccord.offset());
            }
+
         }
 
     }
